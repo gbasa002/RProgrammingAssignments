@@ -1,0 +1,161 @@
+---
+title: "Coursera Practical Machine Learning Course Project"
+author: "Gulsevi Basar"
+date: "September 18, 2016"
+output: html_document
+---
+
+## Introduction
+This study is conducted as part of Coursera's Data Science Specialization - Practical Machine Learning Course Project. The aim in this study is to predict the manner of exercises which participants performed.This is described by the variable "classe" in training set. The machine learning algorithm described here is applied to the 20 test cases given by as part of the course. 
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+## Dataset
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+## Loading Necessary Libraries
+To begin with, it should be noted that the following libraries are necessary to perform the procedure in this study:
+
+1. caret
+2. ggplot2 (necessary for caret)
+3. lattice (necessary for caret)
+4. dplyr (necessary for data manipulation)
+5. rpart
+6. rpart.plot
+7. rattle
+8. randomForest
+9. corrplot
+10. e1071
+
+If you do not have any of these libraries installed, please use the *install.packages* command to install the necessary libraries.
+
+The necessary libraries are attached for use with the following code chunk:
+``` {r Loading libraries, include= TRUE, cache=FALSE, echo = TRUE, warning=FALSE, message=FALSE, results=FALSE}
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(e1071)
+```
+
+In order to ensure the reproducibility, it is important to set seed for the analysis. This can be done as follows:
+
+```{r Setting seed for reproducibility, echo=TRUE, warning=FALSE}
+set.seed(32323)
+```
+## Getting and Cleaning Data
+In this step, the provided data will be downloaded from the urls provided in the description. Then, the dataset will be divided into training and testing sets. Training set will consist of 60% of the whole dataset, and the model will be estimated on it. The estimated model will then be applied to the testing dataset, which consists of 40% of the dataset. In this step, testing dataset provided in the description will also be downloaded to be estimated for the quiz questions. 
+
+```{r Getting and Cleaning Data, echo=TRUE} 
+# download the datasets
+training <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"))
+testing  <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"))
+
+# create a partition with the training dataset 
+inTrain  <- createDataPartition(training$classe, p=0.6, list=FALSE)
+train <- training[inTrain, ]
+test  <- training[-inTrain, ]
+```
+
+After downloading and partitioning the dataset, next step is to clean the data. In this step, both training and testing datasets are cleaned with three stages. In the first stage, a variable called "NACounter" is created to count the number of NA variables in each row. If this number is greater than 0, the rows were removed. In the second stage, near zero variables are removed. In the last stage, identifier variables such as timestamps and participant's id numbers are removed to not affect the ML estimation.
+
+```{r Cleaning datasets, cache=TRUE, echo=TRUE, warning=FALSE, results=FALSE}
+## TRAINING DATASET
+# Cleaning NA variables
+train <- mutate(train, NAcounter=rowSums(is.na(train))) 
+train <- train[which(train$NAcounter != 0),]
+train <- train[,-c(161)]
+
+# Removing near zero values
+nzvInTrain <- nearZeroVar(train)
+train <- train[,-nzvInTrain]
+
+# Remove participant identifiers in each row and timestamps
+train <- train[, -c(1:5)]
+
+## TESTING DATASET
+# Cleaning NA variables
+test <- mutate(test, NAcounter=rowSums(is.na(test))) 
+test <- test[which(test$NAcounter != 0),]
+test <- test[,-c(161)]
+
+# Removing near zero values
+nzvInTest <- nearZeroVar(test)
+test <- test[,-nzvInTest]
+
+# Remove participant identifiers in each row and timestamps
+test <- test[, -c(1:5)]
+```
+
+## Correlation Analysis
+After cleaning the data, the first thing to do is to check whether there are highly correlated variables and whether a dimension reduction procedure such as Principal Component Analysis (PCA) is required. To conduct this procedure, one should remove the dependent variable "classe" and check the correlation among independent variable.
+
+``` {r Correlation Analysis, echo=FALSE, include=TRUE,cache=TRUE}
+correlationMat <- cor(train[,-54])
+corrplot(correlationMat, order="FPC", method="color",type="lower", tl.cex=0.5) 
+```
+
+As it seems from the graph, there are very few variables that are highly correlated. Therefore, there is no need to preprocess the data with PCA. 
+
+
+## Predictor Model Estimation
+In this section, two ML methods are applied to the training dataset to estimate predictor models. These models are decision trees, and random forests. The one with the highest accuracy is chosen to be applied to the quiz testing dataset.
+
+### Method 1: Decision Trees
+In this section, a model with decision trees is estimated. The accuracy is found to be 0.8266 when applied to testing data.
+
+```{r Decision Tree Estimation, cache=TRUE, include=TRUE, warning=FALSE}
+## Fit and plot model
+modelFit1 <- rpart(classe ~ ., data=train, method="class")
+fancyRpartPlot(modelFit1)
+## Apply prediction to testing
+predictionModelFit1 <- predict(modelFit1, test, type="class")
+## Check accuracy
+confMatModel1 <- confusionMatrix(predictionModelFit1, test$classe)
+## Plot Accuracy Results
+plot(confMatModel1$table, col = confMatModel1$byClass, main = paste("Accuracy:",
+                  round(confMatModel1$overall['Accuracy'], 4)))
+```
+
+
+### Method 2: Random Forests
+In this section, a model with random forests is estimated. The accuracy is found to be 0.9962 when applied to testing data.
+
+```{r Random Forest Estimation, cache=TRUE, include=TRUE, warning=FALSE}
+## Fit model
+modelFit2 <- randomForest(classe~., data=train)
+## Apply prediction to testing
+predictionModelFit2 <- predict(modelFit2, test, type="class")
+## Check accuracy
+confMatModel2 <- confusionMatrix(predictionModelFit2, test$classe)
+## Plot Accuracy Results
+plot(confMatModel2$table, col = confMatModel2$byClass, main = paste("Accuracy:",
+                  round(confMatModel2$overall['Accuracy'], 4)))
+```
+
+## Application of Estimated Model to Testing Data
+Since the accuracy of random forests model is found to be higher, it is applied to the testing dataset for the quiz.
+
+```{r Application to testing dataset, warning=FALSE, include=TRUE, cache=TRUE, message=FALSE}
+predTesting <- predict(modelFit2, testing)
+predTesting
+```
+
+
